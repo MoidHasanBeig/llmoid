@@ -3,6 +3,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI
@@ -12,6 +13,15 @@ from pydantic import BaseModel
 load_dotenv()
 
 app = FastAPI(title="llmoid", version="0.1.0")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific origins like ["http://localhost:3001", "https://yourdomain.com"]
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods (GET, POST, OPTIONS, etc.)
+    allow_headers=["*"],  # Allows all headers
+)
 
 # Path to the profile PDF in the context folder
 PROFILE_PDF_PATH = Path(__file__).parent / "context" / "Profile.pdf"
