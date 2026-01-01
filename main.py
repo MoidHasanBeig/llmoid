@@ -3,10 +3,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import tool
+from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
@@ -27,7 +25,6 @@ class AskResponse(BaseModel):
     answer: str
 
 
-@tool
 def read_pdf(pdf_path: str) -> str:
     """
     Read and extract text content from a PDF file.
@@ -61,43 +58,58 @@ def read_pdf(pdf_path: str) -> str:
         return f"Error reading PDF: {str(e)}"
 
 
-def create_agent_executor():
-    """Create and return a LangChain agent that represents the user and answers career questions."""
+def create_chain():
+    """Create and return a LangChain chain that represents the user and answers career questions."""
     # Initialize the LLM
     llm = ChatOpenAI(
         model="gpt-4o-mini",
         temperature=0.3,
     )
 
-    # Define the tools available to the agent
-    tools = [read_pdf]
-
     # Create the prompt template
-    prompt = """
-                You are an AI agent representing as Moid H Beig. Your profile and career information is stored in a PDF file. 
-                When users ask questions about the user's career, experience, skills, or background, you should use the read_pdf tool 
-                to read the Profile.pdf file and answer based on the information found there. 
-                Answer questions in first person as if you are the user, using information from the profile. 
-                Be helpful, accurate, and only use information that is actually present in the profile document.
-                If the question is not related to the profile, answer with "I'm not sure about that. Please ask me about my career."
-                """
+    prompt_template = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                """You are an AI assistant representing Moid H Beig. Your profile and career information is provided in the context below.
+Answer questions in first person as if you are the user, using information from the profile.
+Be helpful, accurate, and only use information that is actually present in the profile document.
+If the question is not related to the profile, answer with "I'm not sure about that. Please ask me about my career."
 
-    # Create the agent using the simplified create_agent function
-    agent_executor = create_agent(model=llm, tools=tools, system_prompt=prompt, response_format=AskResponse)
+Profile Information:
+{profile_content}""",
+            ),
+            ("human", "{question}"),
+        ]
+    )
 
-    return agent_executor
+    def load_profile_content(_):
+        """Load the PDF content."""
+        return read_pdf(str(PROFILE_PDF_PATH))
+
+    # Create the chain: load profile -> format prompt -> invoke LLM -> extract answer
+    chain = (
+        {
+            "profile_content": RunnablePassthrough() | load_profile_content,
+            "question": RunnablePassthrough(),
+        }
+        | prompt_template
+        | llm
+    )
+
+    return chain
 
 
-# Initialize the agent (can be reused across requests)
-agent_executor = None
+# Initialize the chain (can be reused across requests)
+chain_executor = None
 
 
-def get_agent():
-    """Get or create the agent instance."""
-    global agent_executor
-    if agent_executor is None:
-        agent_executor = create_agent_executor()
-    return agent_executor
+def get_chain():
+    """Get or create the chain instance."""
+    global chain_executor
+    if chain_executor is None:
+        chain_executor = create_chain()
+    return chain_executor
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -120,15 +132,12 @@ async def ask(request: AskRequest):
             detail=f"Profile PDF not found at {PROFILE_PDF_PATH}",
         )
 
-    # Construct the message with PDF reading instruction
-    full_message = f"Please read the Profile.pdf file at '{PROFILE_PDF_PATH}' and answer the following question about my career: {request.message}"
-
     try:
-        # Get the agent and run the query
-        agent = get_agent()
-        result = agent.invoke({"messages": [HumanMessage(content=full_message)]})
+        # Get the chain and run the query
+        chain = get_chain()
+        result = chain.invoke({"question": request.message})
 
-        return AskResponse(answer=result['structured_response'].answer)
+        return AskResponse(answer=result.content)
 
     except Exception as e:
         raise HTTPException(
