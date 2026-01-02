@@ -29,6 +29,7 @@ app.add_middleware(
 PROFILE_PDF_PATH = Path(__file__).parent / "context" / "Profile.pdf"
 LIFE_DOCUMENT_PATH = Path(__file__).parent / "context" / "Life.pdf"
 SIDE_PROJECTS_DOCUMENT_PATH = Path(__file__).parent / "context" / "Side projects.pdf"
+BIKE_AND_RUN_DOCUMENT_PATH = Path(__file__).parent / "context" / "Bike and run stats.pdf"
 
 
 class AskRequest(BaseModel):
@@ -105,7 +106,8 @@ Profile Information:
         profile_content = read_pdf(str(PROFILE_PDF_PATH))
         life_content = read_pdf(str(LIFE_DOCUMENT_PATH))
         side_projects_content = read_pdf(str(SIDE_PROJECTS_DOCUMENT_PATH))
-        return f"Profile Information:\n{profile_content}\n\nLife Information:\n{life_content}\n\nSide Projects Information:\n{side_projects_content}"
+        bike_and_run_content = read_pdf(str(BIKE_AND_RUN_DOCUMENT_PATH))
+        return f"Profile Information:\n{profile_content}\n\nLife Information:\n{life_content}\n\nSide Projects Information:\n{side_projects_content}\n\nBike and Run Information:\n{bike_and_run_content}"
 
     # Create the chain: load profile -> format prompt -> invoke LLM -> extract answer
     chain = (
