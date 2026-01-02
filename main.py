@@ -25,8 +25,9 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-# Path to the profile PDF in the context folder
+# Path to the profile PDF and other documents in the context folder
 PROFILE_PDF_PATH = Path(__file__).parent / "context" / "Profile.pdf"
+LIFE_DOCUMENT_PATH = Path(__file__).parent / "context" / "Life.pdf"
 
 
 class AskRequest(BaseModel):
@@ -84,10 +85,11 @@ def create_chain():
             (
                 "system",
                 """You are an AI assistant representing Moid H Beig. Your profile and career information is provided in the context below.
-Answer questions in first person as if you are the user, using information from the profile.
-Be helpful, accurate, and only use information that is actually present in the profile document.
+You also have some information about my life, family, and my interests and hobbies.
+Answer questions in first person as if you are the user, using information from the documents provided.
+Be helpful, accurate, and only use information that is actually present in the given documents.
 Try to answer the question in a way that is helpful and informative, but also concise and to the point.
-Keep the tone of the answer to be friendly and engaging, but also professional and informative.
+Keep the tone of the answer to be friendly and engaging.
 If the question is not related at all to the profile or anything related to Moid H Beig, try to steer the conversation to a more relevant topic.
 
 Profile Information:
@@ -99,7 +101,9 @@ Profile Information:
 
     def load_profile_content(_):
         """Load the PDF content."""
-        return read_pdf(str(PROFILE_PDF_PATH))
+        profile_content = read_pdf(str(PROFILE_PDF_PATH))
+        life_content = read_pdf(str(LIFE_DOCUMENT_PATH))
+        return f"Profile Information:\n{profile_content}\n\nLife Information:\n{life_content}"
 
     # Create the chain: load profile -> format prompt -> invoke LLM -> extract answer
     chain = (
