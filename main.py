@@ -28,6 +28,7 @@ app.add_middleware(
 # Path to the profile PDF and other documents in the context folder
 PROFILE_PDF_PATH = Path(__file__).parent / "context" / "Profile.pdf"
 LIFE_DOCUMENT_PATH = Path(__file__).parent / "context" / "Life.pdf"
+SIDE_PROJECTS_DOCUMENT_PATH = Path(__file__).parent / "context" / "Side projects.pdf"
 
 
 class AskRequest(BaseModel):
@@ -103,7 +104,8 @@ Profile Information:
         """Load the PDF content."""
         profile_content = read_pdf(str(PROFILE_PDF_PATH))
         life_content = read_pdf(str(LIFE_DOCUMENT_PATH))
-        return f"Profile Information:\n{profile_content}\n\nLife Information:\n{life_content}"
+        side_projects_content = read_pdf(str(SIDE_PROJECTS_DOCUMENT_PATH))
+        return f"Profile Information:\n{profile_content}\n\nLife Information:\n{life_content}\n\nSide Projects Information:\n{side_projects_content}"
 
     # Create the chain: load profile -> format prompt -> invoke LLM -> extract answer
     chain = (
