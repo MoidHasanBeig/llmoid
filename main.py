@@ -17,7 +17,9 @@ app = FastAPI(title="llmoid", version="0.1.0")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins like ["http://localhost:3001", "https://yourdomain.com"]
+    allow_origins=[
+        "*"
+    ],  # In production, replace with specific origins like ["http://localhost:3001", "https://yourdomain.com"]
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods (GET, POST, OPTIONS, etc.)
     allow_headers=["*"],  # Allows all headers
@@ -84,7 +86,9 @@ def create_chain():
                 """You are an AI assistant representing Moid H Beig. Your profile and career information is provided in the context below.
 Answer questions in first person as if you are the user, using information from the profile.
 Be helpful, accurate, and only use information that is actually present in the profile document.
-If the question is not related to the profile, answer with "I'm not sure about that. Please ask me about my career."
+Try to answer the question in a way that is helpful and informative, but also concise and to the point.
+Keep the tone of the answer to be friendly and engaging, but also professional and informative.
+If the question is not related at all to the profile or anything related to Moid H Beig, try to steer the conversation to a more relevant topic.
 
 Profile Information:
 {profile_content}""",
