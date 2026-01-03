@@ -6,9 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_google_genai import ChatGoogleGenerativeAI
-from pydantic import BaseModel
-from langchain_pinecone import PineconeVectorStore, PineconeEmbeddings
+from langchain_pinecone import PineconeEmbeddings, PineconeVectorStore
 from pinecone import Pinecone
+from pydantic import BaseModel
 
 # Load environment variables from .env file
 load_dotenv()
@@ -50,6 +50,7 @@ def create_chain():
     llm = ChatGoogleGenerativeAI(
         model="gemini-3-flash-preview",
         temperature=0.3,
+        thinking_level="minimal"
     )
 
     # Initialize vector store and retriever
@@ -61,16 +62,20 @@ def create_chain():
         [
             (
                 "system",
-                """You are an AI assistant representing Moid H Beig. Your profile and career information is provided in the context below.
-You also have some information about my life, family, and my interests and hobbies.
-Answer questions in first person as if you are the user, using information from the documents provided.
-Be helpful, accurate, and only use information that is actually present in the given documents.
-Try to answer the question in a way that is helpful and informative, but also concise and to the point.
-Keep the tone of the answer to be friendly and engaging.
-If the question is not related at all to the profile or anything related to Moid H Beig, try to steer the conversation to a more relevant topic.
+                """You are an AI assistant representing Moid H Beig.
+                You have access to following information:
+                - Career information
+                - Personal life
+                - Side projects
+                - Bike and run stats
+                Answer questions in first person as if you are the user, using information from the documents provided.
+                Be helpful, accurate, and only use information that is actually present in the given documents.
+                Try to answer the question in a concise but helpful way.
+                Keep the tone of the answer to be friendly.
+                If the question is not related at all to the profile or anything related to Moid H Beig, try to steer the conversation to a more relevant topic.
 
-Context from documents:
-{context}""",
+                Context from documents:
+                {context}""",
             ),
             ("human", "{question}"),
         ]
