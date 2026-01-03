@@ -1,13 +1,14 @@
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
+from langchain_pinecone import PineconeVectorStore, PineconeEmbeddings
+from pinecone import Pinecone
 
 # Load environment variables from .env file
 load_dotenv()
@@ -25,12 +26,6 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-# Path to the profile PDF and other documents in the context folder
-PROFILE_PDF_PATH = Path(__file__).parent / "context" / "Profile.pdf"
-LIFE_DOCUMENT_PATH = Path(__file__).parent / "context" / "Life.pdf"
-SIDE_PROJECTS_DOCUMENT_PATH = Path(__file__).parent / "context" / "Side projects.pdf"
-BIKE_AND_RUN_DOCUMENT_PATH = Path(__file__).parent / "context" / "Bike and run stats.pdf"
-
 
 class AskRequest(BaseModel):
     message: str
@@ -40,46 +35,26 @@ class AskResponse(BaseModel):
     answer: str
 
 
-def read_pdf(pdf_path: str) -> str:
-    """
-    Read and extract text content from a PDF file.
-
-    Args:
-        pdf_path: Path to the PDF file to read
-
-    Returns:
-        Extracted text content from the PDF
-    """
-    try:
-        from pypdf import PdfReader
-
-        if not os.path.exists(pdf_path):
-            return f"Error: PDF file not found at path: {pdf_path}"
-
-        reader = PdfReader(pdf_path)
-        text_content = []
-
-        for page_num, page in enumerate(reader.pages, start=1):
-            text = page.extract_text()
-            if text.strip():
-                text_content.append(f"--- Page {page_num} ---\n{text}")
-
-        if not text_content:
-            return "Error: No text content found in the PDF file."
-
-        return "\n\n".join(text_content)
-
-    except Exception as e:
-        return f"Error reading PDF: {str(e)}"
+def get_vector_store():
+    """Initialize and return the Pinecone vector store."""
+    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+    index = pc.Index(os.getenv("INDEX_NAME"))
+    embedding = PineconeEmbeddings(model="llama-text-embed-v2", dimension=2048)
+    vector_store = PineconeVectorStore(index=index, embedding=embedding)
+    return vector_store
 
 
 def create_chain():
     """Create and return a LangChain chain that represents the user and answers career questions."""
     # Initialize the LLM
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-3-flash-preview",
         temperature=0.3,
     )
+
+    # Initialize vector store and retriever
+    vector_store = get_vector_store()
+    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
 
     # Create the prompt template
     prompt_template = ChatPromptTemplate.from_messages(
@@ -94,25 +69,21 @@ Try to answer the question in a way that is helpful and informative, but also co
 Keep the tone of the answer to be friendly and engaging.
 If the question is not related at all to the profile or anything related to Moid H Beig, try to steer the conversation to a more relevant topic.
 
-Profile Information:
-{profile_content}""",
+Context from documents:
+{context}""",
             ),
             ("human", "{question}"),
         ]
     )
 
-    def load_profile_content(_):
-        """Load the PDF content."""
-        profile_content = read_pdf(str(PROFILE_PDF_PATH))
-        life_content = read_pdf(str(LIFE_DOCUMENT_PATH))
-        side_projects_content = read_pdf(str(SIDE_PROJECTS_DOCUMENT_PATH))
-        bike_and_run_content = read_pdf(str(BIKE_AND_RUN_DOCUMENT_PATH))
-        return f"Profile Information:\n{profile_content}\n\nLife Information:\n{life_content}\n\nSide Projects Information:\n{side_projects_content}\n\nBike and Run Information:\n{bike_and_run_content}"
+    def format_docs(docs):
+        """Format the retrieved documents into a single string."""
+        return "\n\n".join(doc.page_content for doc in docs)
 
-    # Create the chain: load profile -> format prompt -> invoke LLM -> extract answer
+    # Create the chain: retrieve relevant docs -> format -> prompt -> invoke LLM
     chain = (
         {
-            "profile_content": RunnablePassthrough() | load_profile_content,
+            "context": retriever | format_docs,
             "question": RunnablePassthrough(),
         }
         | prompt_template
@@ -138,28 +109,35 @@ def get_chain():
 async def ask(request: AskRequest):
     """
     Ask endpoint - takes a user message and answers questions about the user's career
-    based on information from the Profile.pdf in the context folder.
+    based on information from the Pinecone vector store.
     """
     # Check if OpenAI API key is set
-    if not os.getenv("OPENAI_API_KEY"):
+    if not os.getenv("GOOGLE_API_KEY"):
         raise HTTPException(
             status_code=500,
-            detail="OPENAI_API_KEY environment variable is not set",
+            detail="GOOGLE_API_KEY environment variable is not set",
         )
 
-    # Validate that the profile PDF exists
-    if not PROFILE_PDF_PATH.exists():
+    # Check if Pinecone API key is set
+    if not os.getenv("PINECONE_API_KEY"):
         raise HTTPException(
             status_code=500,
-            detail=f"Profile PDF not found at {PROFILE_PDF_PATH}",
+            detail="PINECONE_API_KEY environment variable is not set",
+        )
+
+    # Check if index name is set
+    if not os.getenv("INDEX_NAME"):
+        raise HTTPException(
+            status_code=500,
+            detail="INDEX_NAME environment variable is not set",
         )
 
     try:
         # Get the chain and run the query
         chain = get_chain()
-        result = chain.invoke({"question": request.message})
+        result = chain.invoke({"text": request.message})
 
-        return AskResponse(answer=result.content)
+        return AskResponse(answer=result.content[0]["text"])
 
     except Exception as e:
         raise HTTPException(
