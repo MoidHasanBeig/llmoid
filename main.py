@@ -30,7 +30,7 @@ app.add_middleware(
 class HistoryMessage(BaseModel):
     id: int
     type: Literal["user", "ai"]
-    message: str
+    text: str
 
 
 class AskRequest(BaseModel):
@@ -161,9 +161,9 @@ async def ask(request: AskRequest):
         history_messages = []
         for msg in request.history:
             if msg.type == "user":
-                history_messages.append(HumanMessage(content=msg.message))
+                history_messages.append(HumanMessage(content=msg.text))
             elif msg.type == "ai":
-                history_messages.append(AIMessage(content=msg.message))
+                history_messages.append(AIMessage(content=msg.text))
         
         # Get the chain and run the query
         chain = get_chain()
