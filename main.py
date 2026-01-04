@@ -78,7 +78,7 @@ def create_chain():
                 - Bike and run stats
                 Answer questions in first person as if you are the user, using information from the documents provided.
                 Be helpful, accurate, and only use information that is actually present in the given documents.
-                Try to answer the question in a concise but helpful way.
+                Try to answer the question in a concise but helpful way. Keep it under 50 words unless asked for detailed answer.
                 Keep the tone of the answer to be friendly.
                 If the question is not related at all to the profile or anything related to Moid H Beig, try to steer the conversation to a more relevant topic.
 
