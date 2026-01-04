@@ -1,11 +1,12 @@
 import os
-
+from typing import Literal
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain_openai import ChatOpenAI
 from langchain_pinecone import PineconeEmbeddings, PineconeVectorStore
 from pinecone import Pinecone
 from pydantic import BaseModel
@@ -26,9 +27,15 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+class HistoryMessage(BaseModel):
+    id: int
+    type: Literal["user", "ai"]
+    message: str
+
 
 class AskRequest(BaseModel):
     message: str
+    history: list[HistoryMessage]
 
 
 class AskResponse(BaseModel):
@@ -39,7 +46,7 @@ def get_vector_store():
     """Initialize and return the Pinecone vector store."""
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
     index = pc.Index(os.getenv("INDEX_NAME"))
-    embedding = PineconeEmbeddings(model="llama-text-embed-v2", dimension=2048)
+    embedding = PineconeEmbeddings(model="llama-text-embed-v2")
     vector_store = PineconeVectorStore(index=index, embedding=embedding)
     return vector_store
 
@@ -47,10 +54,11 @@ def get_vector_store():
 def create_chain():
     """Create and return a LangChain chain that represents the user and answers career questions."""
     # Initialize the LLM
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",
+    llm = ChatOpenAI(
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+        base_url=os.getenv("OPENROUTER_BASE_URL"),
+        model=os.getenv("OPENROUTER_MODEL"),
         temperature=0.3,
-        thinking_level="minimal"
     )
 
     # Initialize vector store and retriever
@@ -77,6 +85,7 @@ def create_chain():
                 Context from documents:
                 {context}""",
             ),
+            MessagesPlaceholder(variable_name="history"),
             ("human", "{question}"),
         ]
     )
@@ -86,10 +95,20 @@ def create_chain():
         return "\n\n".join(doc.page_content for doc in docs)
 
     # Create the chain: retrieve relevant docs -> format -> prompt -> invoke LLM
+    # The retriever needs the question text, so we extract it from the input
+    def get_question_text(inputs):
+        """Extract question text for the retriever."""
+        return inputs.get("question", "")
+    
+    def get_history(inputs):
+        """Extract history from inputs."""
+        return inputs.get("history", [])
+    
     chain = (
         {
-            "context": retriever | format_docs,
-            "question": RunnablePassthrough(),
+            "context": RunnableLambda(get_question_text) | retriever | format_docs,
+            "question": RunnableLambda(get_question_text),
+            "history": RunnableLambda(get_history),
         }
         | prompt_template
         | llm
@@ -117,10 +136,10 @@ async def ask(request: AskRequest):
     based on information from the Pinecone vector store.
     """
     # Check if OpenAI API key is set
-    if not os.getenv("GOOGLE_API_KEY"):
+    if not os.getenv("OPENROUTER_API_KEY"):
         raise HTTPException(
             status_code=500,
-            detail="GOOGLE_API_KEY environment variable is not set",
+            detail="OPENROUTER_API_KEY environment variable is not set",
         )
 
     # Check if Pinecone API key is set
@@ -138,11 +157,22 @@ async def ask(request: AskRequest):
         )
 
     try:
+        # Convert history to LangChain message format
+        history_messages = []
+        for msg in request.history:
+            if msg.type == "user":
+                history_messages.append(HumanMessage(content=msg.message))
+            elif msg.type == "ai":
+                history_messages.append(AIMessage(content=msg.message))
+        
         # Get the chain and run the query
         chain = get_chain()
-        result = chain.invoke({"text": request.message})
+        result = chain.invoke({
+            "question": request.message,
+            "history": history_messages
+        })
 
-        return AskResponse(answer=result.content[0]["text"])
+        return AskResponse(answer=result.content)
 
     except Exception as e:
         raise HTTPException(
