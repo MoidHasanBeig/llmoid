@@ -59,6 +59,9 @@ def create_chain():
         base_url=os.getenv("OPENROUTER_BASE_URL"),
         model=os.getenv("OPENROUTER_MODEL"),
         temperature=0.3,
+        extra_body={
+            "thinking": {"type": "disabled"},
+        }
     )
 
     # Initialize vector store and retriever
