@@ -61,6 +61,7 @@ def create_chain():
         temperature=0.3,
         extra_body={
             "thinking": {"type": "disabled"},
+            "reasoning": {"enabled": False},
         }
     )
 
